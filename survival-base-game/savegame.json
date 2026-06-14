@@ -1,0 +1,53 @@
+{
+  "level": 3,
+  "wave": 3,
+  "base_hp": 58.00000000000004,
+  "state": "break",
+  "break_timer": 12,
+  "is_night": false,
+  "enemies_left_to_spawn": 0,
+  "boss_spawned": false,
+  "player": {
+    "x": 567.3141359772351,
+    "y": 467.8746585829758,
+    "hp": 93.20000000000002,
+    "max_hp": 150,
+    "speed": 220,
+    "damage": 20,
+    "coins": 88,
+    "keys": 0,
+    "weapon": "rifle",
+    "ammo": 271,
+    "unlocked_weapons": [
+      "pistol",
+      "rifle",
+      "shotgun"
+    ],
+    "lifesteal": 0
+  },
+  "turret_level": 4,
+  "turret_damage": 32,
+  "turret_range": 405,
+  "chests": [
+    {
+      "opened": false,
+      "tier": 3
+    },
+    {
+      "opened": false,
+      "tier": 3
+    },
+    {
+      "opened": false,
+      "tier": 3
+    },
+    {
+      "opened": false,
+      "tier": 3
+    },
+    {
+      "opened": false,
+      "tier": 3
+    }
+  ]
+}
