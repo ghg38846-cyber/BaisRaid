@@ -42,6 +42,37 @@ def _enemy_tank():
     return s
 
 
+def _enemy_shooter():
+    s = _surf((22, 22))
+    pygame.draw.rect(s, (120, 60, 180), (4, 6, 14, 14))
+    pygame.draw.circle(s, (200, 120, 255), (11, 8), 5)
+    pygame.draw.rect(s, (80, 40, 120), (16, 10, 6, 4))
+    return s
+
+
+def _enemy_swarm():
+    s = _surf((16, 16))
+    pygame.draw.circle(s, (80, 200, 120), (8, 8), 6)
+    pygame.draw.circle(s, (40, 120, 60), (8, 8), 3)
+    return s
+
+
+def _enemy_boss():
+    s = _surf((48, 48))
+    pygame.draw.rect(s, (100, 20, 30), (6, 14, 36, 28))
+    pygame.draw.rect(s, (60, 10, 20), (10, 4, 28, 14))
+    pygame.draw.circle(s, (255, 80, 80), (24, 12), 6)
+    pygame.draw.rect(s, (140, 30, 40), (0, 18, 10, 14))
+    pygame.draw.rect(s, (140, 30, 40), (38, 18, 10, 14))
+    return s
+
+
+def _bullet_enemy():
+    s = _surf((8, 8))
+    pygame.draw.circle(s, (255, 100, 100), (4, 4), 3)
+    return s
+
+
 def _turret():
     s = _surf((28, 28))
     pygame.draw.circle(s, (100, 100, 110), (14, 16), 10)
@@ -157,6 +188,10 @@ def create_textures():
         "enemy": _enemy(),
         "enemy_runner": _enemy_runner(),
         "enemy_tank": _enemy_tank(),
+        "enemy_shooter": _enemy_shooter(),
+        "enemy_swarm": _enemy_swarm(),
+        "enemy_boss": _enemy_boss(),
+        "bullet_enemy": _bullet_enemy(),
         "turret": _turret(),
         "bullet_turret": _bullet_turret(),
         "base": _base(),
