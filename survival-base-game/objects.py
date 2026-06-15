@@ -44,6 +44,32 @@ def push_out_of_walls(x, y, size, walls):
     return x, y
 
 
+def _bullet_hits_tree(x, y, tree_rect):
+    cx, cy = tree_rect.centerx, tree_rect.centery
+    radius = min(tree_rect.w, tree_rect.h) * TREE_BULLET_RADIUS_FRAC
+    return math.hypot(x - cx, y - cy) <= radius
+
+
+def bullet_blocked(x, y, building_walls, fence_walls, tree_walls):
+    for wall in building_walls:
+        if wall.collidepoint(x, y):
+            return True
+    for wall in fence_walls:
+        if wall.collidepoint(x, y):
+            return True
+    for tree in tree_walls:
+        if _bullet_hits_tree(x, y, tree):
+            return True
+    return False
+
+
+def spawn_bullet(x, y, angle, damage, owner="player", source_size=0):
+    offset = max(10, source_size * 0.5 + 6)
+    bx = x + math.cos(angle) * offset
+    by = y + math.sin(angle) * offset
+    return Bullet(bx, by, angle, damage, owner)
+
+
 class Bullet:
     def __init__(self, x, y, angle, damage, owner="player"):
         self.x = x
@@ -55,23 +81,29 @@ class Bullet:
         self.alive = True
         self.radius = 4
 
-    def update(self, dt, walls):
+    def update(self, dt, building_walls, fence_walls, tree_walls):
         self.x += math.cos(self.angle) * self.speed * dt
         self.y += math.sin(self.angle) * self.speed * dt
-        for wall in walls:
-            if wall.collidepoint(self.x, self.y):
-                self.alive = False
-                return
+        if bullet_blocked(self.x, self.y, building_walls, fence_walls, tree_walls):
+            self.alive = False
+            return
         if self.x < 0 or self.y < 0 or self.x > WIDTH or self.y > HEIGHT:
             self.alive = False
 
     def draw(self, screen, textures=None):
         if textures:
-            key = "bullet_turret" if self.owner == "turret" else "bullet"
+            if self.owner == "turret":
+                key = "bullet_turret"
+            elif self.owner == "enemy":
+                key = "bullet_enemy"
+            else:
+                key = "bullet"
             img = textures.get(key, textures["bullet"])
             screen.blit(img, (int(self.x) - 4, int(self.y) - 4))
         else:
             color = CYAN if self.owner == "turret" else YELLOW
+            if self.owner == "enemy":
+                color = RED
             pygame.draw.circle(screen, color, (int(self.x), int(self.y)), self.radius)
 
 
@@ -297,7 +329,7 @@ class Turret:
             return
         self.angle = math.atan2(nearest.y - self.y, nearest.x - self.x)
         dmg = self.damage + (self.level - 1) * 5
-        bullets.append(Bullet(self.x, self.y, self.angle, dmg, owner="turret"))
+        bullets.append(spawn_bullet(self.x, self.y, self.angle, dmg, owner="turret", source_size=20))
         self.cooldown = max(0.25, TURRET_COOLDOWN - self.level * 0.06)
 
     def draw(self, screen, textures=None):
@@ -338,6 +370,21 @@ class Enemy:
             self.size = 26
             self.damage *= TANK_DAMAGE_MULT
             self.vision = 220
+        elif enemy_type == "shooter":
+            self.speed *= SHOOTER_SPEED_MULT
+            self.hp *= SHOOTER_HP_MULT
+            self.size = 18
+            self.damage *= SHOOTER_DAMAGE_MULT
+            self.vision = SHOOTER_RANGE
+            self.shoot_cd = 0.5
+        elif enemy_type == "swarm":
+            self.speed *= SWARM_SPEED_MULT
+            self.hp *= SWARM_HP_MULT
+            self.size = 14
+            self.damage *= SWARM_DAMAGE_MULT
+            self.vision = 280
+
+        self.shoot_cd = 0.5 if enemy_type == "shooter" else 999.0
 
         self.alive = True
         self.attack_timer = 0
@@ -372,13 +419,30 @@ class Enemy:
             self.target = "base"
             return base_rect.centerx, base_rect.centery
 
+        if self.enemy_type == "shooter":
+            if dist_player <= vision:
+                self.target = "player"
+                return player.x, player.y
+            if dist_base <= vision:
+                self.target = "base"
+                return base_rect.centerx, base_rect.centery
+            self.target = "player"
+            return player.x, player.y
+
+        if self.enemy_type == "swarm":
+            if dist_player <= vision:
+                self.target = "player"
+                return player.x, player.y
+            self.target = "base"
+            return base_rect.centerx, base_rect.centery
+
         if dist_player <= dist_base:
             self.target = "player"
             return player.x, player.y
         self.target = "base"
         return base_rect.centerx, base_rect.centery
 
-    def update(self, dt, player, base_rect, walls, is_night=False):
+    def update(self, dt, player, base_rect, walls, is_night=False, bullets=None):
         if not self.alive:
             return 0
 
@@ -386,10 +450,26 @@ class Enemy:
         dx = target_x - self.x
         dy = target_y - self.y
         dist = math.hypot(dx, dy)
-        if dist > 1:
+
+        if self.enemy_type == "shooter" and dist < SHOOTER_RANGE * 0.7:
+            pass
+        elif dist > 1:
             self.x += dx / dist * self.speed * dt
             self.y += dy / dist * self.speed * dt
             self.x, self.y = push_out_of_walls(self.x, self.y, self.size, walls)
+
+        self.shoot_cd -= dt
+        if (
+            bullets is not None
+            and self.enemy_type == "shooter"
+            and self.shoot_cd <= 0
+            and dist <= SHOOTER_RANGE
+        ):
+            angle = math.atan2(target_y - self.y, target_x - self.x)
+            bullets.append(
+                spawn_bullet(self.x, self.y, angle, self.damage, owner="enemy", source_size=self.size)
+            )
+            self.shoot_cd = SHOOTER_COOLDOWN
 
         self.attack_timer -= dt
         base_damage = 0
@@ -408,10 +488,77 @@ class Enemy:
                 "normal": "enemy",
                 "runner": "enemy_runner",
                 "tank": "enemy_tank",
+                "shooter": "enemy_shooter",
+                "swarm": "enemy_swarm",
             }.get(self.enemy_type, "enemy")
             img = textures[tex_key]
             rect = img.get_rect(center=(int(self.x), int(self.y)))
             screen.blit(img, rect)
+        else:
+            pygame.draw.rect(screen, RED, self.rect)
+
+
+class Boss(Enemy):
+    def __init__(self, x, y, wave, level=1):
+        super().__init__(x, y, wave, level, enemy_type="boss")
+        self.enemy_type = "boss"
+        self.hp = BOSS_HP + max(0, level - BOSS_LEVEL) * 80
+        self.max_hp = self.hp
+        self.speed = BOSS_SPEED
+        self.damage = BOSS_DAMAGE
+        self.size = BOSS_SIZE
+        self.vision = 320
+        self.attack_timer = 0
+        self.phase_timer = 4.0
+
+    def update(self, dt, player, base_rect, walls, is_night=False, bullets=None):
+        if not self.alive:
+            return 0
+
+        self.phase_timer -= dt
+        target_x, target_y = self._pick_target(player, base_rect, is_night)
+        dx = target_x - self.x
+        dy = target_y - self.y
+        dist = math.hypot(dx, dy)
+        if dist > 1:
+            self.x += dx / dist * self.speed * dt
+            self.y += dy / dist * self.speed * dt
+            self.x, self.y = push_out_of_walls(self.x, self.y, self.size, walls)
+
+        if bullets is not None and self.phase_timer <= 0:
+            for spread in (-0.35, -0.15, 0, 0.15, 0.35):
+                angle = math.atan2(target_y - self.y, target_x - self.x) + spread
+                bullets.append(
+                    spawn_bullet(
+                        self.x, self.y, angle, self.damage * 0.6, owner="enemy", source_size=self.size
+                    )
+                )
+            self.phase_timer = 2.2
+
+        self.attack_timer -= dt
+        base_damage = 0
+        if self.attack_timer <= 0:
+            if self.rect.colliderect(player.rect):
+                player.hp -= self.damage
+                self.attack_timer = 0.7
+            elif self.rect.colliderect(base_rect):
+                base_damage = self.damage * 1.2
+                self.attack_timer = 0.9
+        return base_damage
+
+    def draw(self, screen, textures=None):
+        if textures:
+            img = textures["enemy_boss"]
+            rect = img.get_rect(center=(int(self.x), int(self.y)))
+            screen.blit(img, rect)
+            bar_w = 50
+            ratio = max(0, self.hp / self.max_hp)
+            pygame.draw.rect(screen, RED, (self.x - bar_w // 2, self.y - self.size, bar_w, 6))
+            pygame.draw.rect(
+                screen,
+                ORANGE,
+                (self.x - bar_w // 2, self.y - self.size, int(bar_w * ratio), 6),
+            )
         else:
             pygame.draw.rect(screen, RED, self.rect)
 
@@ -431,16 +578,28 @@ def roll_enemy_drop():
 
 def _roll_enemy_type(level):
     r = random.randint(1, 100)
-    runner_chance = 22 + level * 3
-    tank_chance = 18 + level * 2
+    runner_chance = 18 + level * 2
+    tank_chance = 16 + level * 2
+    shooter_chance = 12 + level * 3
+    swarm_chance = 10 + level * 2
     if r <= runner_chance:
         return "runner"
     if r <= runner_chance + tank_chance:
         return "tank"
+    if r <= runner_chance + tank_chance + shooter_chance:
+        return "shooter"
+    if r <= runner_chance + tank_chance + shooter_chance + swarm_chance:
+        return "swarm"
     return "normal"
 
 
-def spawn_enemy(wave, level=1, play_bounds=None):
+def spawn_boss(wave, level, play_bounds):
+    center_x = play_bounds.centerx
+    center_y = play_bounds.top + 40
+    return Boss(center_x, center_y, wave, level)
+
+
+def spawn_enemy(wave, level=1, play_bounds=None, force_type=None):
     if play_bounds is None:
         play_bounds = pygame.Rect(40, 40, WIDTH - 80, HEIGHT - 80)
 
@@ -452,7 +611,7 @@ def spawn_enemy(wave, level=1, play_bounds=None):
     right = play_bounds.right - pad
     top = play_bounds.top + pad
     bottom = play_bounds.bottom - pad
-    etype = _roll_enemy_type(level)
+    etype = force_type or _roll_enemy_type(level)
 
     for _ in range(50):
         side = random.randint(0, 3)
